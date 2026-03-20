@@ -1,0 +1,144 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    // ===============================================================
+    // Assumed Data Model
+    // ===============================================================
+    //
+    // Collection: bookings
+    // Document ID: auto-generated
+    // Fields:
+    //   - userId: string (required, immutable) - UID of the creator
+    //   - name: string (required) - Name of the person booking
+    //   - department: string (required) - Department of the person booking
+    //   - customDepartment: string (optional) - Custom department if 'Other'
+    //   - topic: string (required) - Topic of the meeting
+    //   - room: string (required) - Room being booked
+    //   - date: string (required) - Date of the booking (YYYY-MM-DD)
+    //   - startTime: string (required) - Start time (HH:MM)
+    //   - endTime: string (required) - End time (HH:MM)
+    //   - rating: number (optional) - Rating given to the booking experience (1-5)
+    //   - createdAt: timestamp (required, immutable) - Timestamp when created
+    //   - expiresAt: timestamp (required, immutable) - Timestamp when the booking expires
+    //
+    // ===============================================================
+
+    // ===============================================================
+    // Helper Functions
+    // ===============================================================
+    function isAuthenticated() {
+      return request.auth != null;
+    }
+
+    function isOwner(userId) {
+      return isAuthenticated() && request.auth.uid == userId;
+    }
+
+    function isDocOwner() {
+      return isAuthenticated() && request.auth.uid == resource.data.userId;
+    }
+
+    function uidUnchanged() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == request.auth.uid;
+    }
+
+    function uidNotModified() {
+      return !('userId' in request.resource.data) || request.resource.data.userId == resource.data.userId;
+    }
+
+    function hasRequiredFields(fields) {
+      return request.resource.data.keys().hasAll(fields);
+    }
+
+    function validStringLength(field, minLen, maxLen) {
+      return request.resource.data[field] is string &&
+        request.resource.data[field].size() >= minLen &&
+        request.resource.data[field].size() <= maxLen;
+    }
+
+    function isValidOptionalString(field, minLen, maxLen) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is string &&
+              request.resource.data[field].size() >= minLen &&
+              request.resource.data[field].size() <= maxLen);
+    }
+
+    function isValidOptionalNumber(field, minVal, maxVal) {
+      return !(field in request.resource.data) ||
+             (request.resource.data[field] is number &&
+              request.resource.data[field] >= minVal &&
+              request.resource.data[field] <= maxVal);
+    }
+
+    function areImmutableFieldsUnchanged(fields) {
+      return !request.resource.data.diff(resource.data).affectedKeys().hasAny(fields);
+    }
+
+    // ===============================================================
+    // Domain Validators
+    // ===============================================================
+    function isValidBooking() {
+      return hasRequiredFields(['userId', 'name', 'department', 'topic', 'room', 'date', 'startTime', 'endTime', 'createdAt', 'expiresAt']) &&
+             validStringLength('userId', 1, 128) &&
+             validStringLength('name', 1, 100) &&
+             validStringLength('department', 1, 100) &&
+             isValidOptionalString('customDepartment', 0, 100) &&
+             validStringLength('topic', 1, 200) &&
+             validStringLength('room', 1, 50) &&
+             validStringLength('date', 10, 10) &&
+             validStringLength('startTime', 5, 5) &&
+             validStringLength('endTime', 5, 5) &&
+             isValidOptionalNumber('rating', 1, 5) &&
+             request.resource.data.createdAt is timestamp &&
+             request.resource.data.expiresAt is timestamp;
+    }
+
+    function isValidFeedback() {
+      return hasRequiredFields(['bookingId', 'userId', 'rating', 'createdAt', 'expiresAt']) &&
+             validStringLength('bookingId', 1, 128) &&
+             validStringLength('userId', 1, 128) &&
+             request.resource.data.rating is number &&
+             request.resource.data.rating >= 1 &&
+             request.resource.data.rating <= 5 &&
+             isValidOptionalString('comment', 0, 2000) &&
+             request.resource.data.createdAt is timestamp &&
+             request.resource.data.expiresAt is timestamp;
+    }
+
+    match /bookings/{bookingId} {
+      // Anyone authenticated can read bookings to see availability
+      allow read: if isAuthenticated();
+      
+      // Only authenticated users can create bookings, and they must own them
+      allow create: if isAuthenticated() && 
+                    isValidBooking() && 
+                    uidUnchanged();
+      
+      // Only the owner can update their booking (e.g., to add a rating)
+      allow update: if isDocOwner() && 
+                    isValidBooking() && 
+                    uidNotModified() &&
+                    areImmutableFieldsUnchanged(['createdAt', 'expiresAt']);
+                    
+      // Only the owner can delete their booking, OR anyone can delete if it's expired (auto-cleanup)
+      allow delete: if isDocOwner() || resource.data.expiresAt < request.time;
+    }
+
+    match /feedback/{feedbackId} {
+      // Only admin or developers should read feedback, but for simplicity we allow authenticated users to read their own
+      allow read: if isDocOwner();
+      
+      // Authenticated users can create feedback
+      allow create: if isAuthenticated() && 
+                    isValidFeedback() && 
+                    uidUnchanged();
+      
+      // Feedback shouldn't be updated
+      allow update: if false;
+      
+      // Allow deletion if expired (auto-cleanup)
+      allow delete: if resource.data.expiresAt < request.time;
+    }
+  }
+}

@@ -1,0 +1,5 @@
+{
+  "name": "MeetSpace",
+  "description": "A minimal, modern meeting room booking system with Google Apps Script backend integration.",
+  "requestFramePermissions": []
+}

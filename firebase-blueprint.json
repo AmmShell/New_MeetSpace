@@ -1,0 +1,111 @@
+{
+  "entities": {
+    "Booking": {
+      "title": "Booking",
+      "description": "A meeting room booking record.",
+      "type": "object",
+      "properties": {
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who created the booking."
+        },
+        "name": {
+          "type": "string",
+          "description": "The name of the person booking."
+        },
+        "department": {
+          "type": "string",
+          "description": "The department of the person booking."
+        },
+        "customDepartment": {
+          "type": "string",
+          "description": "Custom department if 'Other' is selected."
+        },
+        "topic": {
+          "type": "string",
+          "description": "The topic of the meeting."
+        },
+        "room": {
+          "type": "string",
+          "description": "The room being booked."
+        },
+        "date": {
+          "type": "string",
+          "format": "date",
+          "description": "The date of the booking (YYYY-MM-DD)."
+        },
+        "startTime": {
+          "type": "string",
+          "description": "The start time of the booking (HH:MM)."
+        },
+        "endTime": {
+          "type": "string",
+          "description": "The end time of the booking (HH:MM)."
+        },
+        "rating": {
+          "type": "number",
+          "description": "Optional rating given to the booking experience (1-5)."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the booking was created."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the booking should be automatically deleted (7 days after booking date)."
+        }
+      },
+      "required": ["userId", "name", "department", "topic", "room", "date", "startTime", "endTime", "createdAt", "expiresAt"]
+    },
+    "Feedback": {
+      "title": "Feedback",
+      "description": "User feedback and rating for a booking.",
+      "type": "object",
+      "properties": {
+        "bookingId": {
+          "type": "string",
+          "description": "The ID of the booking this feedback is for."
+        },
+        "userId": {
+          "type": "string",
+          "description": "The UID of the user who submitted the feedback."
+        },
+        "rating": {
+          "type": "number",
+          "description": "Rating given to the booking experience (1-5)."
+        },
+        "comment": {
+          "type": "string",
+          "description": "Optional text comment/feedback."
+        },
+        "createdAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the feedback was created."
+        },
+        "expiresAt": {
+          "type": "string",
+          "format": "date-time",
+          "description": "The timestamp when the feedback should be automatically deleted (14 days after submission)."
+        }
+      },
+      "required": ["bookingId", "userId", "rating", "createdAt", "expiresAt"]
+    }
+  },
+  "firestore": {
+    "/bookings/{bookingId}": {
+      "schema": {
+        "$ref": "#/entities/Booking"
+      },
+      "description": "Stores all meeting room bookings."
+    },
+    "/feedback/{feedbackId}": {
+      "schema": {
+        "$ref": "#/entities/Feedback"
+      },
+      "description": "Stores all user feedback and ratings."
+    }
+  }
+}
