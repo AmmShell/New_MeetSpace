@@ -3,7 +3,7 @@ import { format, addDays, isAfter, isToday, parse, isBefore, startOfDay } from '
 import { th } from 'date-fns/locale';
 import Swal from 'sweetalert2';
 import { Calendar, Clock, User, Building, MessageSquare, Star, Send, Info, Key, Smartphone, History, Search, Filter, ArrowUpDown, MapPin, Check, LogIn, LogOut } from 'lucide-react';
-import { db, auth, loginWithGoogle, logout } from './firebase';
+import { db, auth, loginWithGoogle, loginAsGuest, logout } from './firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, getDocFromServer, Timestamp, getDocs, where, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
 
@@ -218,17 +218,21 @@ export default function App() {
           });
         }
 
-        // Query feedback where expiresAt is in the past
-        const qFeedback = query(collection(db, 'feedback'), where('expiresAt', '<', new Date()));
+        // Query user's own feedback to check for expiration (avoids permission errors)
+        const qFeedback = query(collection(db, 'feedback'), where('userId', '==', user.uid));
         const snapshotFeedback = await getDocs(qFeedback);
+        const now = new Date();
         
         if (!snapshotFeedback.empty) {
           snapshotFeedback.forEach(async (docSnap) => {
-            try {
-              await deleteDoc(doc(db, 'feedback', docSnap.id));
-              console.log(`Auto-deleted old feedback: ${docSnap.id}`);
-            } catch (error) {
-              console.error('Failed to auto-delete old feedback', error);
+            const data = docSnap.data();
+            if (data.expiresAt && data.expiresAt.toDate() < now) {
+              try {
+                await deleteDoc(doc(db, 'feedback', docSnap.id));
+                console.log(`Auto-deleted old feedback: ${docSnap.id}`);
+              } catch (error) {
+                console.error('Failed to auto-delete old feedback', error);
+              }
             }
           });
         }
@@ -401,14 +405,30 @@ export default function App() {
             <Calendar className="w-8 h-8 text-blue-600" />
           </div>
           <h1 className="text-2xl font-bold text-slate-800 mb-2">ระบบจองห้องประชุม</h1>
-          <p className="text-slate-600 mb-8">กรุณาเข้าสู่ระบบด้วยบัญชี Google เพื่อดำเนินการต่อ</p>
-          <button
-            onClick={loginWithGoogle}
-            className="w-full flex items-center justify-center gap-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium py-3 px-4 rounded-xl transition-colors"
-          >
-            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
-            เข้าสู่ระบบด้วย Google
-          </button>
+          <p className="text-slate-600 mb-8">กรุณาเข้าสู่ระบบเพื่อดำเนินการต่อ</p>
+          
+          <div className="space-y-3">
+            <button
+              onClick={loginWithGoogle}
+              className="w-full flex items-center justify-center gap-3 bg-white border border-slate-300 hover:bg-slate-50 text-slate-700 font-medium py-3 px-4 rounded-xl transition-colors"
+            >
+              <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/auth/google.svg" alt="Google" className="w-5 h-5" />
+              เข้าสู่ระบบด้วย Google
+            </button>
+            
+            <div className="relative flex items-center py-2">
+              <div className="flex-grow border-t border-slate-200"></div>
+              <span className="flex-shrink-0 mx-4 text-slate-400 text-sm">หรือ</span>
+              <div className="flex-grow border-t border-slate-200"></div>
+            </div>
+
+            <button
+              onClick={loginAsGuest}
+              className="w-full flex items-center justify-center gap-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-3 px-4 rounded-xl transition-colors"
+            >
+              เข้าใช้งานแบบไม่ระบุตัวตน (Guest)
+            </button>
+          </div>
         </div>
       </div>
     );
