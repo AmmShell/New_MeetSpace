@@ -2,7 +2,7 @@ import React, { useState, useEffect, useMemo } from 'react';
 import { format, addDays, isAfter, isToday, parse, isBefore, startOfDay } from 'date-fns';
 import { th } from 'date-fns/locale';
 import Swal from 'sweetalert2';
-import { Calendar, Clock, User, Building, MessageSquare, Star, Send, Info, Key, Smartphone, History, Search, Filter, ArrowUpDown, MapPin, Check, LogIn, LogOut } from 'lucide-react';
+import { Calendar, Clock, User, Building, MessageSquare, Star, Send, Info, Key, Smartphone, History, Search, Filter, ArrowUpDown, MapPin, Check, LogIn, LogOut, Trash2 } from 'lucide-react';
 import { db, auth, loginWithGoogle, loginAsGuest, logout } from './firebase';
 import { collection, addDoc, onSnapshot, query, orderBy, doc, updateDoc, serverTimestamp, getDocFromServer, Timestamp, getDocs, where, deleteDoc } from 'firebase/firestore';
 import { onAuthStateChanged } from 'firebase/auth';
@@ -107,7 +107,7 @@ const MOCK_HISTORY = [
 ];
 
 export default function App() {
-  const [activeTab, setActiveTab] = useState<'booking' | 'history'>('booking');
+  const [activeTab, setActiveTab] = useState<'booking' | 'history' | 'allHistory'>('booking');
   const [user, setUser] = useState<any>(null);
   const [isAuthReady, setIsAuthReady] = useState(false);
   
@@ -310,7 +310,39 @@ export default function App() {
     setIsSubmitting(true);
 
     const bookingDate = new Date(formData.date);
-    const expiresAtDate = addDays(bookingDate, 7); // Expire 7 days after the meeting date
+
+    // Guest Restrictions
+    if (user.isAnonymous) {
+      // 1. Max 3 days in advance
+      const maxDate = addDays(startOfDay(new Date()), 3);
+      if (isAfter(bookingDate, maxDate)) {
+        setIsSubmitting(false);
+        Swal.fire({
+          icon: 'warning',
+          title: 'ข้อจำกัดสำหรับ Guest',
+          text: 'บัญชี Guest สามารถจองล่วงหน้าได้ไม่เกิน 3 วัน กรุณาเข้าสู่ระบบด้วย Google เพื่อจองล่วงหน้าได้นานกว่านี้',
+          confirmButtonColor: '#3b82f6'
+        });
+        return;
+      }
+
+      // 2. Max 1 hour duration
+      const startIndex = TIME_SLOTS.indexOf(formData.startTime);
+      const endIndex = TIME_SLOTS.indexOf(formData.endTime);
+      const durationSlots = endIndex - startIndex;
+      if (durationSlots > 2) { // 2 slots = 60 mins (each slot is 30 mins)
+        setIsSubmitting(false);
+        Swal.fire({
+          icon: 'warning',
+          title: 'ข้อจำกัดสำหรับ Guest',
+          text: 'บัญชี Guest สามารถจองได้สูงสุด 1 ชั่วโมงต่อครั้ง กรุณาเข้าสู่ระบบด้วย Google เพื่อจองได้นานกว่านี้',
+          confirmButtonColor: '#3b82f6'
+        });
+        return;
+      }
+    }
+
+    const expiresAtDate = addDays(bookingDate, 365); // Keep history for 1 year
 
     const payload = {
       userId: user.uid,
@@ -366,7 +398,7 @@ export default function App() {
         rating: selectedRating,
         comment: comment,
         createdAt: serverTimestamp(),
-        expiresAt: Timestamp.fromDate(addDays(new Date(), 14))
+        expiresAt: Timestamp.fromDate(addDays(new Date(), 365))
       });
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'feedback');
@@ -374,12 +406,55 @@ export default function App() {
     }
   };
 
+  const handleCancelBooking = async (bookingId: string) => {
+    const result = await Swal.fire({
+      title: 'ยืนยันการยกเลิก?',
+      text: "คุณต้องการยกเลิกการจองห้องประชุมนี้ใช่หรือไม่?",
+      icon: 'warning',
+      showCancelButton: true,
+      confirmButtonColor: '#ef4444',
+      cancelButtonColor: '#64748b',
+      confirmButtonText: 'ใช่, ยกเลิกเลย',
+      cancelButtonText: 'ไม่ยกเลิก'
+    });
+
+    if (result.isConfirmed) {
+      try {
+        await deleteDoc(doc(db, 'bookings', bookingId));
+        Swal.fire({
+          icon: 'success',
+          title: 'ยกเลิกสำเร็จ',
+          text: 'การจองของคุณถูกยกเลิกเรียบร้อยแล้ว',
+          confirmButtonColor: '#3b82f6'
+        });
+      } catch (error) {
+        handleFirestoreError(error, OperationType.DELETE, 'bookings');
+        Swal.fire({
+          icon: 'error',
+          title: 'เกิดข้อผิดพลาด',
+          text: 'ไม่สามารถยกเลิกการจองได้ กรุณาลองใหม่อีกครั้ง',
+          confirmButtonColor: '#3b82f6'
+        });
+      }
+    }
+  };
+
   const filteredHistory = useMemo(() => {
+    const now = new Date();
     return historyData
       .filter(item => {
         const matchesSearch = item.topic.toLowerCase().includes(searchQuery.toLowerCase()) || 
                               item.name.toLowerCase().includes(searchQuery.toLowerCase());
         const matchesRoom = filterRoom ? item.room === filterRoom : true;
+        
+        // Filter based on tab
+        if (activeTab === 'history') {
+          // Only show upcoming bookings (end time is in the future)
+          const bookingEnd = new Date(`${item.date}T${item.endTime}`);
+          return matchesSearch && matchesRoom && bookingEnd > now;
+        }
+        
+        // For allHistory, show everything
         return matchesSearch && matchesRoom;
       })
       .sort((a, b) => {
@@ -387,7 +462,7 @@ export default function App() {
         const dateB = new Date(`${b.date}T${b.startTime}`).getTime();
         return sortOrder === 'desc' ? dateB - dateA : dateA - dateB;
       });
-  }, [historyData, searchQuery, filterRoom, sortOrder]);
+  }, [historyData, searchQuery, filterRoom, sortOrder, activeTab]);
 
   if (!isAuthReady) {
     return (
@@ -476,7 +551,18 @@ export default function App() {
               }`}
             >
               <History className="w-4 h-4" />
-              ประวัติการจอง
+              รายการจองปัจจุบัน
+            </button>
+            <button
+              onClick={() => setActiveTab('allHistory')}
+              className={`flex-1 py-4 text-center font-medium text-sm sm:text-base transition-colors flex items-center justify-center gap-2 ${
+                activeTab === 'allHistory' 
+                  ? 'bg-white text-blue-600 border-b-2 border-blue-600' 
+                  : 'text-slate-500 hover:text-slate-700 hover:bg-slate-100'
+              }`}
+            >
+              <Smartphone className="w-4 h-4" />
+              ประวัติทั้งหมด
             </button>
           </div>
         </div>
@@ -613,10 +699,17 @@ export default function App() {
 
               {/* Section: Meeting Details */}
               <div className="space-y-6">
-                <h2 className="text-lg font-semibold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
-                  <Building className="w-5 h-5 text-blue-500" />
-                  รายละเอียดการประชุม
-                </h2>
+                <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                  <h2 className="text-lg font-semibold text-slate-800 flex items-center gap-2">
+                    <Building className="w-5 h-5 text-blue-500" />
+                    รายละเอียดการประชุม
+                  </h2>
+                  {user.isAnonymous && (
+                    <span className="text-[10px] sm:text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-100 flex items-center gap-1">
+                      <Info className="w-3 h-3" /> บัญชี Guest มีข้อจำกัดการจอง
+                    </span>
+                  )}
+                </div>
                 
                 <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                   <div className="md:col-span-2">
@@ -729,7 +822,7 @@ export default function App() {
           )}
 
           {/* TAB: HISTORY VIEW */}
-          {activeTab === 'history' && (
+          {(activeTab === 'history' || activeTab === 'allHistory') && (
             <div className="space-y-6 animate-in fade-in duration-300">
               {/* Filters & Controls */}
               <div className="flex flex-col sm:flex-row gap-4">
@@ -767,6 +860,15 @@ export default function App() {
                 </div>
               </div>
 
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-bold text-slate-800">
+                  {activeTab === 'history' ? 'รายการจองปัจจุบัน' : 'ประวัติการประชุมทั้งหมด'}
+                </h2>
+                <div className="text-sm text-slate-500">
+                  พบ {filteredHistory.length} รายการ
+                </div>
+              </div>
+
               {/* History List */}
               {isLoadingHistory ? (
                 <div className="py-12 flex flex-col items-center justify-center text-slate-400">
@@ -779,37 +881,59 @@ export default function App() {
               ) : filteredHistory.length === 0 ? (
                 <div className="py-12 text-center text-slate-500 bg-slate-50 rounded-xl border border-slate-100 border-dashed">
                   <History className="w-12 h-12 mx-auto text-slate-300 mb-3" />
-                  <p>ไม่พบประวัติการจอง</p>
+                  <p>{activeTab === 'history' ? 'ไม่มีรายการจองที่กำลังจะถึง' : 'ไม่พบประวัติการจอง'}</p>
                 </div>
               ) : (
                 <div className="grid gap-4">
-                  {filteredHistory.map((booking, idx) => (
-                    <div key={idx} className="bg-white border border-slate-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow">
-                      <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
-                        <div>
-                          <h3 className="text-lg font-semibold text-slate-800 mb-1">{booking.topic}</h3>
-                          <div className="flex items-center gap-2 text-sm text-slate-600 mb-3">
-                            <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md font-medium">
-                              <MapPin className="w-3.5 h-3.5" /> {booking.room}
-                            </span>
-                            <span className="inline-flex items-center gap-1 text-slate-500">
-                              <User className="w-3.5 h-3.5" /> {booking.name} ({booking.department})
-                            </span>
+                  {filteredHistory.map((booking, idx) => {
+                    const isPast = new Date(`${booking.date}T${booking.endTime}`) < new Date();
+                    return (
+                      <div key={idx} className={`bg-white border border-slate-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow ${isPast ? 'opacity-75 bg-slate-50/50' : ''}`}>
+                        <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
+                          <div>
+                            <div className="flex items-center gap-2 mb-1">
+                              <h3 className="text-lg font-semibold text-slate-800">{booking.topic}</h3>
+                              {isPast && (
+                                <span className="text-[10px] uppercase tracking-wider bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold">
+                                  เสร็จสิ้นแล้ว
+                                </span>
+                              )}
+                            </div>
+                            <div className="flex items-center gap-2 text-sm text-slate-600 mb-3">
+                              <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md font-medium">
+                                <MapPin className="w-3.5 h-3.5" /> {booking.room}
+                              </span>
+                              <span className="inline-flex items-center gap-1 text-slate-500">
+                                <User className="w-3.5 h-3.5" /> {booking.name} ({booking.department})
+                              </span>
+                            </div>
                           </div>
-                        </div>
-                        <div className="text-left sm:text-right bg-slate-50 p-3 rounded-lg border border-slate-100">
-                          <div className="text-sm font-medium text-slate-800 flex items-center sm:justify-end gap-1.5 mb-1">
-                            <Calendar className="w-4 h-4 text-blue-500" />
-                            {format(new Date(`${booking.date}T${booking.startTime}`), 'd MMMM yyyy', { locale: th })}
-                          </div>
-                          <div className="text-sm text-slate-600 flex items-center sm:justify-end gap-1.5">
-                            <Clock className="w-4 h-4 text-blue-500" />
-                            {booking.startTime} - {booking.endTime}
+                          <div className="text-left sm:text-right bg-slate-50 p-3 rounded-lg border border-slate-100 flex flex-col justify-between">
+                            <div>
+                              <div className="text-sm font-medium text-slate-800 flex items-center sm:justify-end gap-1.5 mb-1">
+                                <Calendar className="w-4 h-4 text-blue-500" />
+                                {format(new Date(`${booking.date}T${booking.startTime}`), 'd MMMM yyyy', { locale: th })}
+                              </div>
+                              <div className="text-sm text-slate-600 flex items-center sm:justify-end gap-1.5">
+                                <Clock className="w-4 h-4 text-blue-500" />
+                                {booking.startTime} - {booking.endTime} น.
+                              </div>
+                            </div>
+                            
+                            {booking.userId === user.uid && !isPast && (
+                              <button
+                                onClick={() => handleCancelBooking(booking.id)}
+                                className="mt-3 flex items-center justify-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 py-1.5 px-3 rounded-lg border border-red-100 transition-colors"
+                              >
+                                <Trash2 className="w-3.5 h-3.5" />
+                                ยกเลิกการจอง
+                              </button>
+                            )}
                           </div>
                         </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>
