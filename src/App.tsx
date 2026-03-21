@@ -326,16 +326,16 @@ export default function App() {
         return;
       }
 
-      // 2. Max 1 hour duration
+      // 2. Max 2 hour duration
       const startIndex = TIME_SLOTS.indexOf(formData.startTime);
       const endIndex = TIME_SLOTS.indexOf(formData.endTime);
       const durationSlots = endIndex - startIndex;
-      if (durationSlots > 2) { // 2 slots = 60 mins (each slot is 30 mins)
+      if (durationSlots > 4) { // 4 slots = 120 mins (each slot is 30 mins)
         setIsSubmitting(false);
         Swal.fire({
           icon: 'warning',
           title: 'ข้อจำกัดสำหรับ Guest',
-          text: 'บัญชี Guest สามารถจองได้สูงสุด 1 ชั่วโมงต่อครั้ง กรุณาเข้าสู่ระบบด้วย Google เพื่อจองได้นานกว่านี้',
+          text: 'บัญชี Guest สามารถจองได้สูงสุด 2 ชั่วโมงต่อครั้ง กรุณาเข้าสู่ระบบด้วย Google เพื่อจองได้นานกว่านี้',
           confirmButtonColor: '#3b82f6'
         });
         return;
@@ -404,6 +404,115 @@ export default function App() {
       handleFirestoreError(error, OperationType.CREATE, 'feedback');
       console.error('Failed to submit rating:', error);
     }
+  };
+
+  const showGuestRestrictions = () => {
+    Swal.fire({
+      title: 'ข้อจำกัดสำหรับบัญชี Guest',
+      html: `
+        <div class="text-left space-y-4 py-2">
+          <div class="flex items-start gap-3">
+            <div class="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0 mt-0.5">1</div>
+            <div>
+              <p class="font-bold text-slate-800">จองล่วงหน้าได้จำกัด</p>
+              <p class="text-sm text-slate-600">สามารถจองล่วงหน้าได้ไม่เกิน 3 วันเท่านั้น</p>
+            </div>
+          </div>
+          <div class="flex items-start gap-3">
+            <div class="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0 mt-0.5">2</div>
+            <div>
+              <p class="font-bold text-slate-800">จำกัดระยะเวลาการประชุม</p>
+              <p class="text-sm text-slate-600">จองได้สูงสุด 2 ชั่วโมง (120 นาที) ต่อครั้ง</p>
+            </div>
+          </div>
+          <div class="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100">
+            <p class="text-sm text-blue-700 leading-relaxed">
+              <strong>💡 คำแนะนำ:</strong> เข้าสู่ระบบด้วยบัญชี Google เพื่อปลดล็อกข้อจำกัดทั้งหมด และสามารถจัดการประวัติการจองได้สะดวกยิ่งขึ้น
+            </p>
+          </div>
+        </div>
+      `,
+      confirmButtonText: 'ตกลง',
+      confirmButtonColor: '#3b82f6',
+      customClass: {
+        container: 'font-sans'
+      }
+    });
+  };
+
+  const showBookingDetails = (booking: any) => {
+    const isPast = new Date(`${booking.date}T${booking.endTime}`) < new Date();
+    
+    Swal.fire({
+      title: 'รายละเอียดการจอง',
+      html: `
+        <div class="text-left space-y-4 py-2">
+          <div class="p-4 bg-slate-50 rounded-xl border border-slate-100">
+            <h3 class="font-bold text-lg text-slate-800 mb-1">${booking.topic}</h3>
+            <div class="flex items-center gap-2 text-sm text-slate-500">
+              <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium">${booking.room}</span>
+              ${isPast ? '<span class="bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium">เสร็จสิ้นแล้ว</span>' : '<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">กำลังจะมาถึง</span>'}
+            </div>
+          </div>
+
+          <div class="grid grid-cols-2 gap-4">
+            <div class="space-y-1">
+              <p class="text-xs text-slate-400 uppercase font-bold tracking-wider">วันที่</p>
+              <p class="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                <i class="lucide-calendar w-4 h-4 text-blue-500"></i>
+                ${format(new Date(`${booking.date}T${booking.startTime}`), 'd MMMM yyyy', { locale: th })}
+              </p>
+            </div>
+            <div class="space-y-1">
+              <p class="text-xs text-slate-400 uppercase font-bold tracking-wider">เวลา</p>
+              <p class="text-sm font-medium text-slate-700 flex items-center gap-1.5">
+                <i class="lucide-clock w-4 h-4 text-blue-500"></i>
+                ${booking.startTime} - ${booking.endTime} น.
+              </p>
+            </div>
+          </div>
+
+          <div class="space-y-3 pt-2">
+            <div class="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-lg">
+              <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-500">
+                <i class="lucide-user w-5 h-5"></i>
+              </div>
+              <div>
+                <p class="text-xs text-slate-400 font-medium">ผู้จอง</p>
+                <p class="text-sm font-bold text-slate-800">${booking.name}</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-lg">
+              <div class="w-10 h-10 rounded-full bg-indigo-50 flex items-center justify-center text-indigo-500">
+                <i class="lucide-building w-5 h-5"></i>
+              </div>
+              <div>
+                <p class="text-xs text-slate-400 font-medium">แผนก</p>
+                <p class="text-sm font-bold text-slate-800">${booking.department}</p>
+              </div>
+            </div>
+          </div>
+
+          ${booking.createdAt ? `
+            <div class="pt-2 text-center">
+              <p class="text-[10px] text-slate-400">ทำการจองเมื่อ: ${format(booking.createdAt.toDate(), 'd MMM yyyy HH:mm', { locale: th })} น.</p>
+            </div>
+          ` : ''}
+        </div>
+      `,
+      confirmButtonText: 'ปิด',
+      confirmButtonColor: '#3b82f6',
+      showCancelButton: booking.userId === user.uid && !isPast,
+      cancelButtonText: 'ยกเลิกการจองนี้',
+      cancelButtonColor: '#ef4444',
+      customClass: {
+        container: 'font-sans'
+      }
+    }).then((result) => {
+      if (result.dismiss === Swal.DismissReason.cancel) {
+        handleCancelBooking(booking.id);
+      }
+    });
   };
 
   const handleCancelBooking = async (bookingId: string) => {
@@ -502,6 +611,13 @@ export default function App() {
               className="w-full flex items-center justify-center gap-3 bg-slate-100 hover:bg-slate-200 text-slate-700 font-medium py-3 px-4 rounded-xl transition-colors"
             >
               เข้าใช้งานแบบไม่ระบุตัวตน (Guest)
+            </button>
+
+            <button 
+              onClick={showGuestRestrictions}
+              className="mt-2 text-xs text-amber-600 hover:text-amber-700 flex items-center justify-center gap-1 mx-auto transition-colors"
+            >
+              <Info className="w-3 h-3" /> ดูข้อจำกัดของบัญชี Guest
             </button>
           </div>
         </div>
@@ -705,9 +821,12 @@ export default function App() {
                     รายละเอียดการประชุม
                   </h2>
                   {user.isAnonymous && (
-                    <span className="text-[10px] sm:text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-100 flex items-center gap-1">
-                      <Info className="w-3 h-3" /> บัญชี Guest มีข้อจำกัดการจอง
-                    </span>
+                    <button 
+                      onClick={showGuestRestrictions}
+                      className="text-[10px] sm:text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-100 flex items-center gap-1 hover:bg-amber-100 transition-colors cursor-help"
+                    >
+                      <Info className="w-3 h-3" /> บัญชี Guest มีข้อจำกัดการจอง (คลิกเพื่อดู)
+                    </button>
                   )}
                 </div>
                 
@@ -888,11 +1007,16 @@ export default function App() {
                   {filteredHistory.map((booking, idx) => {
                     const isPast = new Date(`${booking.date}T${booking.endTime}`) < new Date();
                     return (
-                      <div key={idx} className={`bg-white border border-slate-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-shadow ${isPast ? 'opacity-75 bg-slate-50/50' : ''}`}>
+                      <div 
+                        key={idx} 
+                        onClick={() => showBookingDetails(booking)}
+                        className={`bg-white border border-slate-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden ${isPast ? 'opacity-75 bg-slate-50/50' : ''}`}
+                      >
+                        <div className="absolute top-0 right-0 w-1 h-full bg-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
                           <div>
                             <div className="flex items-center gap-2 mb-1">
-                              <h3 className="text-lg font-semibold text-slate-800">{booking.topic}</h3>
+                              <h3 className="text-lg font-semibold text-slate-800 group-hover:text-blue-600 transition-colors">{booking.topic}</h3>
                               {isPast && (
                                 <span className="text-[10px] uppercase tracking-wider bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold">
                                   เสร็จสิ้นแล้ว
@@ -907,8 +1031,11 @@ export default function App() {
                                 <User className="w-3.5 h-3.5" /> {booking.name} ({booking.department})
                               </span>
                             </div>
+                            <div className="text-[10px] text-blue-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
+                              <Info className="w-3 h-3" /> คลิกเพื่อดูรายละเอียดทั้งหมด
+                            </div>
                           </div>
-                          <div className="text-left sm:text-right bg-slate-50 p-3 rounded-lg border border-slate-100 flex flex-col justify-between">
+                          <div className="text-left sm:text-right bg-slate-50 p-3 rounded-lg border border-slate-100 flex flex-col justify-between" onClick={(e) => e.stopPropagation()}>
                             <div>
                               <div className="text-sm font-medium text-slate-800 flex items-center sm:justify-end gap-1.5 mb-1">
                                 <Calendar className="w-4 h-4 text-blue-500" />
