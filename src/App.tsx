@@ -1,6 +1,7 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { format, addDays, isAfter, isToday, parse, isBefore, startOfDay } from 'date-fns';
 import { th } from 'date-fns/locale';
+import emailjs from '@emailjs/browser';
 import Swal from 'sweetalert2';
 import { Calendar, Clock, User, Building, MessageSquare, Star, Send, Info, Key, Smartphone, History, Search, Filter, ArrowUpDown, MapPin, Check, LogIn, LogOut, Trash2 } from 'lucide-react';
 import { db, auth, loginWithGoogle, loginAsGuest, logout } from './firebase';
@@ -114,6 +115,7 @@ export default function App() {
   // Booking Form State
   const [formData, setFormData] = useState({
     name: '',
+    email: '',
     department: '',
     customDepartment: '',
     topic: '',
@@ -143,6 +145,9 @@ export default function App() {
     const unsubscribe = onAuthStateChanged(auth, (currentUser) => {
       setUser(currentUser);
       setIsAuthReady(true);
+      if (currentUser?.email) {
+        setFormData(prev => ({ ...prev, email: currentUser.email || '' }));
+      }
     });
     return () => unsubscribe();
   }, []);
@@ -347,6 +352,7 @@ export default function App() {
     const payload = {
       userId: user.uid,
       name: formData.name,
+      email: formData.email,
       department: formData.department === 'อื่นๆ (Other)' ? formData.customDepartment : formData.department,
       topic: formData.topic,
       room: formData.room,
@@ -361,7 +367,32 @@ export default function App() {
       const docRef = await addDoc(collection(db, 'bookings'), payload);
       setSuccessData({ ...payload, id: docRef.id });
 
-      setFormData({
+      // Send Email Notification via EmailJS
+      if (formData.email && import.meta.env.VITE_EMAILJS_SERVICE_ID && import.meta.env.VITE_EMAILJS_TEMPLATE_ID && import.meta.env.VITE_EMAILJS_PUBLIC_KEY) {
+        try {
+          await emailjs.send(
+            import.meta.env.VITE_EMAILJS_SERVICE_ID,
+            import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
+            {
+              to_email: formData.email,
+              to_name: formData.name,
+              room: formData.room,
+              topic: formData.topic,
+              date: format(bookingDate, 'd MMMM yyyy', { locale: th }),
+              start_time: formData.startTime,
+              end_time: formData.endTime,
+              department: payload.department,
+            },
+            import.meta.env.VITE_EMAILJS_PUBLIC_KEY
+          );
+          console.log("Email notification sent successfully");
+        } catch (emailError) {
+          console.error("Failed to send email notification:", emailError);
+        }
+      }
+
+      setFormData(prev => ({
+        ...prev,
         name: '',
         department: '',
         customDepartment: '',
@@ -370,7 +401,7 @@ export default function App() {
         date: minDate,
         startTime: '',
         endTime: '',
-      });
+      }));
 
     } catch (error) {
       handleFirestoreError(error, OperationType.CREATE, 'bookings');
@@ -781,6 +812,18 @@ export default function App() {
                   </div>
                   
                   <div>
+                    <label className="block text-sm font-medium text-slate-700 mb-1">อีเมล (สำหรับรับการแจ้งเตือน)</label>
+                    <input
+                      type="email"
+                      name="email"
+                      value={formData.email}
+                      onChange={handleInputChange}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
+                      placeholder="เช่น somchai@example.com"
+                    />
+                  </div>
+
+                  <div className="md:col-span-2">
                     <label className="block text-sm font-medium text-slate-700 mb-1">แผนก *</label>
                     <select
                       name="department"
