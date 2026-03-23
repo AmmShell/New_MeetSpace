@@ -523,8 +523,21 @@ export default function App() {
   };
 
   const showBookingDetails = (booking: any) => {
-    const isPast = new Date(`${booking.date}T${booking.endTime}`) < new Date();
+    const now = new Date();
+    const start = new Date(`${booking.date}T${booking.startTime}`);
+    const end = new Date(`${booking.date}T${booking.endTime}`);
+    const isPast = end < now;
+    const isOngoing = now >= start && now <= end;
     
+    let statusBadge = '';
+    if (isPast) {
+      statusBadge = '<span class="bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium">เสร็จสิ้นแล้ว</span>';
+    } else if (isOngoing) {
+      statusBadge = '<span class="bg-amber-100 text-amber-700 px-2 py-0.5 rounded font-medium flex items-center gap-1.5"><span class="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>กำลังดำเนินการ</span>';
+    } else {
+      statusBadge = '<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">กำลังจะมาถึง</span>';
+    }
+
     Swal.fire({
       title: 'รายละเอียดการจอง',
       html: `
@@ -533,7 +546,7 @@ export default function App() {
             <h3 class="font-bold text-lg text-slate-800 mb-1">${booking.topic}</h3>
             <div class="flex items-center gap-2 text-sm text-slate-500">
               <span class="bg-blue-100 text-blue-700 px-2 py-0.5 rounded font-medium">${booking.room}</span>
-              ${isPast ? '<span class="bg-slate-200 text-slate-600 px-2 py-0.5 rounded font-medium">เสร็จสิ้นแล้ว</span>' : '<span class="bg-green-100 text-green-700 px-2 py-0.5 rounded font-medium">กำลังจะมาถึง</span>'}
+              ${statusBadge}
             </div>
           </div>
 
@@ -1138,12 +1151,18 @@ export default function App() {
               ) : (
                 <div className="grid gap-4">
                   {filteredHistory.map((booking, idx) => {
-                    const isPast = new Date(`${booking.date}T${booking.endTime}`) < new Date();
+                    const now = new Date();
+                    const start = new Date(`${booking.date}T${booking.startTime}`);
+                    const end = new Date(`${booking.date}T${booking.endTime}`);
+                    const isPast = end < now;
+                    const isOngoing = now >= start && now <= end;
+                    const isUpcoming = start > now;
+                    
                     return (
                       <div 
                         key={idx} 
                         onClick={() => showBookingDetails(booking)}
-                        className={`bg-white border border-slate-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden ${isPast ? 'opacity-75 bg-slate-50/50' : ''}`}
+                        className={`bg-white border border-slate-100 p-5 rounded-xl shadow-sm hover:shadow-md transition-all cursor-pointer group relative overflow-hidden ${isPast ? 'opacity-75 bg-slate-50/50' : ''} ${isOngoing ? 'border-l-4 border-l-amber-500' : ''}`}
                       >
                         <div className="absolute top-0 right-0 w-1 h-full bg-blue-500 opacity-0 group-hover:opacity-100 transition-opacity"></div>
                         <div className="flex flex-col sm:flex-row sm:items-start justify-between gap-4">
@@ -1153,6 +1172,12 @@ export default function App() {
                               {isPast && (
                                 <span className="text-[10px] uppercase tracking-wider bg-slate-200 text-slate-600 px-1.5 py-0.5 rounded font-bold">
                                   เสร็จสิ้นแล้ว
+                                </span>
+                              )}
+                              {isOngoing && (
+                                <span className="text-[10px] uppercase tracking-wider bg-amber-100 text-amber-700 px-1.5 py-0.5 rounded font-bold flex items-center gap-1">
+                                  <span className="w-1.5 h-1.5 rounded-full bg-amber-500 animate-pulse"></span>
+                                  กำลังดำเนินการ
                                 </span>
                               )}
                             </div>
@@ -1185,7 +1210,7 @@ export default function App() {
                               </div>
                             </div>
                             
-                            {booking.userId === user.uid && !isPast && (
+                            {booking.userId === user.uid && isUpcoming && (
                               <button
                                 onClick={() => handleCancelBooking(booking.id)}
                                 className="mt-3 flex items-center justify-center gap-1.5 text-xs font-medium text-red-600 hover:text-red-700 hover:bg-red-50 py-1.5 px-3 rounded-lg border border-red-100 transition-colors"
