@@ -123,6 +123,7 @@ export default function App() {
     date: '',
     startTime: '',
     endTime: '',
+    additionalRequests: '',
   });
   const [minDate, setMinDate] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -139,6 +140,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [filterRoom, setFilterRoom] = useState('');
   const [sortOrder, setSortOrder] = useState<'desc' | 'asc'>('desc');
+  const [hasAutoFilled, setHasAutoFilled] = useState(false);
 
   // Auth Effect
   useEffect(() => {
@@ -147,6 +149,16 @@ export default function App() {
       setIsAuthReady(true);
       if (currentUser?.email) {
         setFormData(prev => ({ ...prev, email: currentUser.email || '' }));
+      }
+      if (!currentUser) {
+        setHasAutoFilled(false);
+        setFormData(prev => ({
+          ...prev,
+          name: '',
+          email: '',
+          department: '',
+          customDepartment: '',
+        }));
       }
     });
     return () => unsubscribe();
@@ -201,6 +213,31 @@ export default function App() {
 
     return () => unsubscribe();
   }, [isAuthReady, user]);
+
+  // Load Last Used Data from History
+  useEffect(() => {
+    if (!isAuthReady || !user || user.isAnonymous || isLoadingHistory || hasAutoFilled) return;
+
+    const lastBooking = historyData.find(b => b.userId === user.uid);
+    if (lastBooking) {
+      let dept = lastBooking.department || '';
+      let customDept = '';
+      
+      if (dept && !DEPARTMENTS.includes(dept)) {
+        customDept = dept;
+        dept = 'อื่นๆ (Other)';
+      }
+
+      setFormData(prev => ({
+        ...prev,
+        name: prev.name || lastBooking.name || '',
+        email: prev.email || lastBooking.email || user.email || '',
+        department: prev.department || dept,
+        customDepartment: prev.customDepartment || customDept,
+      }));
+    }
+    setHasAutoFilled(true);
+  }, [historyData, isLoadingHistory, isAuthReady, user, hasAutoFilled]);
 
   // Cleanup Old Bookings & Feedback Effect
   useEffect(() => {
@@ -359,6 +396,7 @@ export default function App() {
       date: formData.date,
       startTime: formData.startTime,
       endTime: formData.endTime,
+      additionalRequests: formData.additionalRequests,
       createdAt: serverTimestamp(),
       expiresAt: Timestamp.fromDate(expiresAtDate),
     };
@@ -370,9 +408,12 @@ export default function App() {
       // Send Email Notification via EmailJS
       if (formData.email && import.meta.env.VITE_EMAILJS_SERVICE_ID && import.meta.env.VITE_EMAILJS_TEMPLATE_ID && import.meta.env.VITE_EMAILJS_PUBLIC_KEY) {
         try {
+          const publicKey = import.meta.env.VITE_EMAILJS_PUBLIC_KEY.replace(/['"]/g, '').trim(); // Remove any accidental quotes or spaces
+          console.log("Using Public Key length:", publicKey.length);
+          
           await emailjs.send(
-            import.meta.env.VITE_EMAILJS_SERVICE_ID,
-            import.meta.env.VITE_EMAILJS_TEMPLATE_ID,
+            import.meta.env.VITE_EMAILJS_SERVICE_ID.replace(/['"]/g, '').trim(),
+            import.meta.env.VITE_EMAILJS_TEMPLATE_ID.replace(/['"]/g, '').trim(),
             {
               to_email: formData.email,
               to_name: formData.name,
@@ -383,7 +424,9 @@ export default function App() {
               end_time: formData.endTime,
               department: payload.department,
             },
-            import.meta.env.VITE_EMAILJS_PUBLIC_KEY
+            {
+              publicKey: publicKey,
+            }
           );
           console.log("Email notification sent successfully");
         } catch (emailError) {
@@ -401,6 +444,7 @@ export default function App() {
         date: minDate,
         startTime: '',
         endTime: '',
+        additionalRequests: '',
       }));
 
     } catch (error) {
@@ -456,9 +500,16 @@ export default function App() {
               <p class="text-sm text-slate-600">จองได้สูงสุด 2 ชั่วโมง (120 นาที) ต่อครั้ง</p>
             </div>
           </div>
+          <div class="flex items-start gap-3">
+            <div class="w-6 h-6 rounded-full bg-amber-100 text-amber-600 flex items-center justify-center flex-shrink-0 mt-0.5">3</div>
+            <div>
+              <p class="font-bold text-slate-800">ต้องกรอกข้อมูลใหม่ทุกครั้ง</p>
+              <p class="text-sm text-slate-600">ระบบจะไม่จดจำชื่อ อีเมล และแผนกของคุณสำหรับการจองครั้งต่อไป</p>
+            </div>
+          </div>
           <div class="mt-4 p-4 bg-blue-50 rounded-xl border border-blue-100">
             <p class="text-sm text-blue-700 leading-relaxed">
-              <strong>💡 คำแนะนำ:</strong> เข้าสู่ระบบด้วยบัญชี Google เพื่อปลดล็อกข้อจำกัดทั้งหมด และสามารถจัดการประวัติการจองได้สะดวกยิ่งขึ้น
+              <strong>💡 คำแนะนำ:</strong> เข้าสู่ระบบด้วยบัญชี Google เพื่อปลดล็อกข้อจำกัดทั้งหมด, จัดการประวัติการจองได้สะดวกยิ่งขึ้น และระบบจะช่วยจดจำข้อมูลส่วนตัวของคุณให้โดยอัตโนมัติ
             </p>
           </div>
         </div>
@@ -504,6 +555,17 @@ export default function App() {
           </div>
 
           <div class="space-y-3 pt-2">
+            ${booking.additionalRequests ? `
+            <div class="flex items-start gap-3 p-3 bg-amber-50 border border-amber-100 rounded-lg">
+              <div class="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 shrink-0">
+                <i class="lucide-info w-5 h-5"></i>
+              </div>
+              <div>
+                <p class="text-xs text-amber-600 font-medium">อุปกรณ์เสริม / อาหารว่าง</p>
+                <p class="text-sm font-bold text-amber-900">${booking.additionalRequests}</p>
+              </div>
+            </div>
+            ` : ''}
             <div class="flex items-center gap-3 p-3 bg-white border border-slate-100 rounded-lg">
               <div class="w-10 h-10 rounded-full bg-blue-50 flex items-center justify-center text-blue-500">
                 <i class="lucide-user w-5 h-5"></i>
@@ -761,6 +823,7 @@ export default function App() {
                       <textarea
                         value={comment}
                         onChange={(e) => setComment(e.target.value)}
+                        maxLength={100}
                         placeholder="ข้อเสนอแนะเพิ่มเติมเพื่อการพัฒนา (ไม่บังคับ)"
                         className="w-full px-4 py-3 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white resize-none h-24"
                       />
@@ -790,6 +853,15 @@ export default function App() {
               </div>
             ) : (
             <form onSubmit={handleSubmit} className="space-y-8 animate-in fade-in duration-300">
+              {/* Policy Banner */}
+              <div className="bg-amber-50 border border-amber-200 rounded-xl p-4 flex items-start gap-3 text-amber-800">
+                <Info className="w-5 h-5 text-amber-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm">
+                  <p className="font-semibold mb-1">นโยบายระดับองค์กร</p>
+                  <p>ทุกการประชุมที่ใช้เวลาเกิน 30 นาที จะต้องทำการจองผ่านระบบล่วงหน้าอย่างน้อย 2 ชั่วโมง</p>
+                </div>
+              </div>
+
               {/* Section: Personal Info */}
               <div className="space-y-6">
                 <h2 className="text-lg font-semibold text-slate-800 border-b border-slate-100 pb-2 flex items-center gap-2">
@@ -805,6 +877,7 @@ export default function App() {
                       name="name"
                       value={formData.name}
                       onChange={handleInputChange}
+                      maxLength={30}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
                       placeholder="เช่น สมชาย ใจดี"
                       required
@@ -818,6 +891,7 @@ export default function App() {
                       name="email"
                       value={formData.email}
                       onChange={handleInputChange}
+                      maxLength={30}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
                       placeholder="เช่น somchai@example.com"
                     />
@@ -848,6 +922,7 @@ export default function App() {
                       name="customDepartment"
                       value={formData.customDepartment}
                       onChange={handleInputChange}
+                      maxLength={30}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
                       placeholder="เช่น ฝ่ายออกแบบ, R&D"
                       required
@@ -881,6 +956,7 @@ export default function App() {
                       name="topic"
                       value={formData.topic}
                       onChange={handleInputChange}
+                      maxLength={100}
                       className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
                       placeholder="เช่น วางแผนระบบ Q3, ประชุมลูกค้า"
                       required
@@ -953,6 +1029,19 @@ export default function App() {
                       ))}
                     </select>
                   </div>
+
+                  <div className="md:col-span-2">
+                    <label className="block text-sm font-medium text-slate-700 mb-1">อุปกรณ์เสริม / อาหารว่าง (ถ้ามี)</label>
+                    <input
+                      type="text"
+                      name="additionalRequests"
+                      value={formData.additionalRequests}
+                      onChange={handleInputChange}
+                      maxLength={100}
+                      className="w-full px-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all bg-slate-50 focus:bg-white"
+                      placeholder="เช่น โปรเจคเตอร์, สายแปลงสัญญาณ, กาแฟ 3 ที่"
+                    />
+                  </div>
                 </div>
               </div>
 
@@ -995,6 +1084,7 @@ export default function App() {
                     placeholder="ค้นหาจากหัวข้อ หรือ ชื่อ..."
                     value={searchQuery}
                     onChange={(e) => setSearchQuery(e.target.value)}
+                    maxLength={100}
                     className="w-full pl-10 pr-4 py-2.5 rounded-xl border border-slate-200 focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50 focus:bg-white transition-all"
                   />
                 </div>
@@ -1066,13 +1156,18 @@ export default function App() {
                                 </span>
                               )}
                             </div>
-                            <div className="flex items-center gap-2 text-sm text-slate-600 mb-3">
+                            <div className="flex items-center gap-2 text-sm text-slate-600 mb-3 flex-wrap">
                               <span className="inline-flex items-center gap-1 bg-blue-50 text-blue-700 px-2.5 py-0.5 rounded-md font-medium">
                                 <MapPin className="w-3.5 h-3.5" /> {booking.room}
                               </span>
                               <span className="inline-flex items-center gap-1 text-slate-500">
                                 <User className="w-3.5 h-3.5" /> {booking.name} ({booking.department})
                               </span>
+                              {booking.additionalRequests && (
+                                <span className="inline-flex items-center gap-1 bg-amber-50 text-amber-700 px-2.5 py-0.5 rounded-md font-medium text-xs">
+                                  <Info className="w-3.5 h-3.5" /> มีคำขอพิเศษ
+                                </span>
+                              )}
                             </div>
                             <div className="text-[10px] text-blue-500 font-medium opacity-0 group-hover:opacity-100 transition-opacity flex items-center gap-1">
                               <Info className="w-3 h-3" /> คลิกเพื่อดูรายละเอียดทั้งหมด
